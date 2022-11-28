@@ -1,0 +1,377 @@
+import tensorflow as tf
+from tensorflow import keras
+import os 
+
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
+tf.test.is_built_with_cuda()
+print(tf.version.VERSION)
+import sys
+sys.version
+
+os.chdir(r'C:/Users/onyem/OneDrive/Desktop/BCData')
+
+pwd
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import glob, os
+
+
+import pydot
+import graphviz 
+
+
+
+from tensorflow.keras import layers, activations, optimizers, losses, metrics, initializers
+from tensorflow.keras.preprocessing import image, image_dataset_from_directory
+from tensorflow.keras.applications import MobileNetV3Small, MobileNet, InceptionV3
+from tensorflow.keras.applications.mobilenet_v3 import preprocess_input, decode_predictions
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+
+from sklearn import tree
+from sklearn.metrics import accuracy_score
+
+from tensorflow.keras.applications.inception_v3 import InceptionV3
+from keras.models import Sequential
+from keras.models import Model
+from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau, TensorBoard
+from keras import optimizers, losses, activations, models
+from keras.layers import Convolution2D, Dense, Input, Flatten, Dropout, MaxPooling2D, BatchNormalization, GlobalAveragePooling2D, Concatenate
+from keras import applications
+
+
+
+seed = 42
+tf.random.set_seed(seed)
+np.random.seed(seed)
+
+dir_path = r'C:/Users/onyem/OneDrive/Desktop/BCData'
+IMAGE_SHAPE = (224, 224)
+
+# create prepare_image method
+# used to preprocess the image for efficientNet model
+def prepare_image(file):
+    img = image.load_img(file, target_size=IMAGE_SHAPE)
+    img_array = image.img_to_array(img)
+    return tf.keras.applications.efficientnet.preprocess_input (img_array)
+    
+    directories = os.listdir(dir_path) # read the folders
+
+files = [] # save all images for each folder
+labels = [] # set for each image the name of it
+
+# read files for each directory
+for folder in directories:
+    
+    fileList = glob.glob(dir_path + '/'+ folder + '/*')
+    labels.extend([folder for l in fileList])
+    files.extend(fileList)
+    
+len(files), len(labels)
+
+# create two lists to hold only non-mask images and label for each one
+selected_files = []
+selected_labels = []
+
+for file, label in zip(files, labels):
+    if 'mask' not in file:
+        selected_files.append(file)
+        selected_labels.append(label)
+
+    
+len(selected_files), len(selected_labels)
+
+# the dictionary holds list of images and for each one has its target/label
+images = {
+    'image': [], 
+    'target': []
+}
+
+print('Preparing the image...')
+
+for i, (file, label) in enumerate(zip(selected_files, selected_labels)):
+    images['image'].append(prepare_image(file))
+    images['target'].append(label)
+
+print('Finished.')
+
+# convert lists to arrays 
+images['image'] = np.array(images['image'])
+images['target'] = np.array(images['target'])
+
+# encode the target
+le = LabelEncoder()
+
+images['target'] = le.fit_transform(images['target'])
+
+classes = le.classes_ # get the classes for each target
+print(f'the target classes are: {classes}')
+
+
+x_train, x_test, y_train, y_test = train_test_split(images['image'], images['target'], test_size=.10)
+
+x_train.shape, x_test.shape, y_train.shape, y_test.shape 
+
+x_train = x_train.reshape(113,224*224*3)
+x_test = x_test.reshape(13,224*224*3)
+
+# creating the Decision Tree classifier
+
+
+clf = tree.DecisionTreeClassifier()
+clf.fit(x_train,y_train)
+
+pred = clf.predict(x_test)
+
+print("Accuracy for Decision Tree =", accuracy_score(pred, y_test)*100, "%")
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+
+rfc = RandomForestClassifier(random_state=0)
+# fit the model
+
+rfc.fit(x_train, y_train)
+
+# Predict the Test set results
+y_pred = rfc.predict(x_test)
+# Check accuracy score 
+
+print("Accuracy with Random forest =", accuracy_score(y_pred, y_test)*100, "%")
+
+from sklearn.svm import SVC
+from sklearn.metrics import confusion_matrix
+
+
+svc_model = SVC() #initialize the code module
+svc_model.fit(x_train,y_train)
+
+
+y_predict = svc_model.predict(x_test) # get 'y' by predict FOR the TEST values.
+cm = confusion_matrix(y_test,y_predict)
+display(cm)
+
+print("Accuracy for SVC =", accuracy_score(y_predict, y_test)*100, "%")
+
+from keras.applications.vgg19 import VGG19
+base_model = VGG19(
+    include_top=False,
+    weights='imagenet',
+    input_shape=(*IMAGE_SHAPE, 3),
+    classes=2)
+
+# Freeze the base_model
+base_model.trainable = False
+
+add_model1 = Sequential()
+add_model1.add(base_model)
+add_model1.add(GlobalAveragePooling2D())
+add_model1.add(Dense(128, activation = 'sigmoid'))
+add_model1.add(Dropout(0.5))
+add_model1.add(Dense(1, activation='sigmoid'))
+
+vgg_model = add_model1
+
+vgg_model.summary()
+
+x_train, x_test, y_train, y_test = train_test_split(images['image'], images['target'], test_size=.10)
+
+x_train.shape, x_test.shape, y_train.shape, y_test.shape 
+
+batch_size=50
+epochs=100
+
+from tensorflow.keras.callbacks import EarlyStopping
+
+custom_early_stopping = EarlyStopping(
+    monitor='val_accuracy', 
+    patience=40,
+    restore_best_weights=True
+)
+
+vgg_model.compile(optimizer=tf.keras.optimizers.Adam() , loss = "binary_crossentropy", metrics=["accuracy"]) #tf.keras.optimizers.Adam(0.01)
+
+
+history1 =  vgg_model.fit(x_train,y_train, batch_size=batch_size,epochs=epochs,
+                              verbose=1,
+                              validation_data =(x_test,y_test),callbacks=[custom_early_stopping])
+                              
+hist = history1.history
+
+plt.plot(hist['loss'], label=  'loss')
+plt.plot(hist['val_loss'], label = 'val_loss')
+plt.plot(hist['accuracy'], label='accuracy')
+plt.plot(hist['val_accuracy'], label='val_accuracy')
+plt.legend()
+
+score = vgg_model.evaluate(x_test, y_test, batch_size=batch_size, verbose=1)
+
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])
+
+
+score = vgg_model.evaluate(x_train, y_train, batch_size=batch_size, verbose=1)
+
+print('Train loss:', score[0])
+print('Train accuracy:', score[1])
+
+# used to predict the model and visualize the orignal image with title of true and pred values
+def predict_image(img_path, label):
+    img1 = prepare_image(img_path) # preprocess the image
+    res = vgg_model.predict(np.expand_dims(img1, axis = 0)) # predict the image
+    pred = classes[np.argmax(res)]
+
+    # Visualize the image
+    img = image.load_img(img_path)
+    plt.imshow(np.array(img))
+    plt.title(f'True: {label}\nPredicted: {pred}')
+    
+predict_image(dir_path + '/benign/benign (11).png', 'benign')
+
+
+predict_image(dir_path + '/benign/benign (85).png', 'benign')
+
+predict_image(dir_path + '/maligant/malignant (10).png', 'malignant')
+
+
+predicted = []
+for item in vgg_model.predict(x_test):
+    predicted.append(np.argmax(item))
+    
+x_test.shape
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+conf = confusion_matrix(y_test,predicted)
+conf
+
+from keras.utils.vis_utils import plot_model
+plot_model(vgg_model, to_file='aug_model_plot.png', show_shapes=True, show_layer_names=True)
+
+from tensorflow.keras.applications.inception_v3 import InceptionV3
+from keras.models import Sequential
+from keras.models import Model
+from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau, TensorBoard
+from keras import optimizers, losses, activations, models
+from keras.layers import Convolution2D, Dense, Input, Flatten, Dropout, MaxPooling2D, BatchNormalization, GlobalAveragePooling2D, Concatenate
+from keras import applications
+
+
+base_model2 = applications.InceptionV3(weights='imagenet', 
+                                include_top=False, 
+                                input_shape=(224, 224,3))
+base_model2.trainable = False
+
+
+add_model2 = Sequential()
+add_model2.add(base_model2)
+add_model2.add(Dense(128, activation = 'sigmoid'))
+add_model2.add(Dropout(0.5))
+add_model2.add(Flatten())
+add_model2.add(Dense(1, activation='sigmoid'))
+
+inception_model = add_model2
+
+inception_model.summary()
+
+
+from tensorflow.keras.callbacks import EarlyStopping
+
+custom_early_stopping = EarlyStopping(
+    monitor='val_accuracy', 
+    patience=40,
+    restore_best_weights=True
+)
+
+inception_model.compile(optimizer=tf.keras.optimizers.Adam() , 
+                        loss = "binary_crossentropy", 
+                        metrics=["accuracy"]) #tf.keras.optimizers.Adam(0.01)
+
+
+history2 =  inception_model.fit(x_train,y_train, batch_size=batch_size,epochs=epochs,
+                              verbose=1,
+                              validation_data =(x_test,y_test),callbacks=[custom_early_stopping])
+                              
+hist = history2.history
+
+plt.plot(hist['loss'], label=  'loss')
+plt.plot(hist['val_loss'], label = 'val_loss')
+plt.plot(hist['accuracy'], label='accuracy')
+plt.plot(hist['val_accuracy'], label='val_accuracy')
+plt.legend()
+
+score = inception_model.evaluate(x_test, y_test, batch_size=batch_size, verbose=1)
+
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])
+
+score = inception_model.evaluate(x_train, y_train, batch_size=batch_size, verbose=1)
+
+print('Train loss:', score[0])
+print('Train accuracy:', score[1])
+
+from tensorflow.keras.applications.resnet_v2 import ResNet50V2
+from keras.optimizers import Adam, RMSprop
+
+input_shape = (224,224,3)
+lr = 1e-5
+epochs = 50
+batch_size = 64
+
+
+learning_rate_reduction = ReduceLROnPlateau(monitor='val_acc', 
+                                            patience=5, 
+                                            verbose=1, 
+                                            factor=0.5, 
+                                            min_lr=1e-7)
+                                            
+base_model3 = ResNet50V2(include_top=False,
+                 weights= None,
+                 input_tensor=None,
+                 input_shape=input_shape,
+                 pooling='avg',
+                 classes=2)
+base_model2.trainable = False
+
+
+add_model3 = Sequential()
+add_model3.add(base_model3)
+add_model3.add(Dense(128, activation = 'sigmoid'))
+add_model3.add(Dropout(0.5))
+add_model3.add(Flatten())
+add_model3.add(Dense(1, activation='sigmoid'))
+
+ResNet_model = add_model3
+
+ResNet_model.summary()
+
+
+ResNet_model.compile(optimizer = Adam(lr) ,
+              loss = "binary_crossentropy", 
+              metrics=["accuracy"])
+              
+history3 =  ResNet_model.fit(x_train,y_train, batch_size=batch_size,epochs=epochs,
+                              verbose=1,
+                              validation_data =(x_test,y_test),callbacks=[custom_early_stopping])
+                              
+hist = history3.history
+
+plt.plot(hist['loss'], label=  'loss')
+plt.plot(hist['val_loss'], label = 'val_loss')
+plt.plot(hist['accuracy'], label='accuracy')
+plt.plot(hist['val_accuracy'], label='val_accuracy')
+plt.legend()
+
+score = ResNet_model.evaluate(x_test, y_test, batch_size=batch_size, verbose=1)
+
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])
+
+score = ResNet_model.evaluate(x_train, y_train, batch_size=batch_size, verbose=1)
+
+print('Train loss:', score[0])
+print('Train accuracy:', score[1])
